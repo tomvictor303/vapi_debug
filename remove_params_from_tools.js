@@ -39,6 +39,71 @@ async function confirmAction(message) {
 }
 
 /**
+ * Removes configured params from a tool body schema.
+ *
+ * @param {object} body Tool body schema.
+ * @returns {{ body: object, removedParams: string[] }} Updated body and removed params.
+ */
+function removeParamsFromBody(body) {
+  const updatedBody = structuredClone(body || {});
+  const removedParams = [];
+
+  if (Array.isArray(updatedBody.required)) {
+    const requiredParams = new Set(updatedBody.required);
+    updatedBody.required = updatedBody.required.filter(param => !params_to_remove.includes(param));
+
+    params_to_remove.forEach(param => {
+      if (requiredParams.has(param)) {
+        removedParams.push(param);
+      }
+    });
+  }
+
+  if (updatedBody.properties && typeof updatedBody.properties === 'object') {
+    params_to_remove.forEach(param => {
+      if (Object.hasOwn(updatedBody.properties, param)) {
+        delete updatedBody.properties[param];
+
+        if (!removedParams.includes(param)) {
+          removedParams.push(param);
+        }
+      }
+    });
+  }
+
+  return { body: updatedBody, removedParams };
+}
+
+/**
+ * Patches a Vapi tool with an updated body schema.
+ *
+ * @param {object} tool Target Vapi tool.
+ * @param {object} body Updated tool body schema.
+ * @returns {Promise<object>} Updated Vapi tool response.
+ */
+async function patchTool(tool, body) {
+  const toolUrl = `https://api.vapi.ai/tool/${tool.id}`;
+
+  const response = await fetch(toolUrl, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      type: tool.type,
+      body,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to patch ${tool.name} (${tool.id}). HTTP status: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
  * Fetches all Vapi tools and collects tools whose names start with the
  * configured prefix.
  */
@@ -95,7 +160,17 @@ async function collectTargetTools() {
       return targetTools;
     }
 
-    console.log('Modification step is not implemented yet.');
+    for (const tool of targetTools) {
+      const { body, removedParams } = removeParamsFromBody(tool.body);
+
+      if (removedParams.length === 0) {
+        console.log(`Skipped ${tool.name}: no matching params found.`);
+        continue;
+      }
+
+      await patchTool(tool, body);
+      console.log(`Patched ${tool.name}: removed ${removedParams.join(', ')}.`);
+    }
 
     return targetTools;
   } catch (error) {
