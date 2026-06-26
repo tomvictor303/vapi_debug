@@ -21,17 +21,16 @@ function validateGuardrails() {
 }
 
 /**
- * Asks the user to confirm before continuing with tool updates.
+ * Asks the user to confirm an operation.
  *
+ * @param {string} message Confirmation message to show.
  * @returns {Promise<boolean>} Whether the user confirmed the operation.
  */
-async function confirmDestructiveAction() {
+async function confirmAction(message) {
   const rl = readline.createInterface({ input, output });
 
   try {
-    const answer = await rl.question(
-      `Are you sure you want to remove ${params_to_remove.join(', ')} from Vapi tools starting with "${filter_prefix}"? Type y/n: `
-    );
+    const answer = await rl.question(`${message} Type y/n: `);
 
     return answer.trim().toLowerCase() === 'y';
   } finally {
@@ -51,7 +50,9 @@ async function collectTargetTools() {
       throw new Error('VAPI_API_KEY environment variable is required');
     }
 
-    const confirmed = await confirmDestructiveAction();
+    const confirmed = await confirmAction(
+      `Are you sure you want to remove ${params_to_remove.join(', ')} parameters from Vapi tools starting with "${filter_prefix}"?`
+    );
     if (!confirmed) {
       console.log('Cancelled. No Vapi tools were fetched or changed.');
       return [];
@@ -78,7 +79,17 @@ async function collectTargetTools() {
     );
 
     console.log(`\nTarget tools found: ${targetTools.length}`);
-    console.log(JSON.stringify(targetTools, null, 2));
+    targetTools.forEach(tool => {
+      console.log(`- ${tool.name}`);
+    });
+
+    const modifyConfirmed = await confirmAction('Are you sure you want to modify these tools?');
+    if (!modifyConfirmed) {
+      console.log('Cancelled. No Vapi tools were changed.');
+      return targetTools;
+    }
+
+    console.log('Modification step is not implemented yet.');
 
     return targetTools;
   } catch (error) {
