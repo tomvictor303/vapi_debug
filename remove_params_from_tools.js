@@ -91,8 +91,7 @@ async function patchTool(tool, body) {
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      type: tool.type,
-      body,
+      body
     }),
   });
 
