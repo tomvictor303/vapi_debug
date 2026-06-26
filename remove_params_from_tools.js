@@ -75,8 +75,14 @@ async function collectTargetTools() {
 
     const allTools = await response.json();
     const targetTools = allTools.filter(tool =>
-      typeof tool.name === 'string' && tool.name.startsWith(filter_prefix)
+      tool.type === 'apiRequest' &&
+      typeof tool.name === 'string' &&
+      tool.name.startsWith(filter_prefix)
     );
+
+    if (targetTools.length === 0) {
+      throw new Error(`No apiRequest tools found starting with "${filter_prefix}"`);
+    }
 
     console.log(`\nTarget tools found: ${targetTools.length}`);
     targetTools.forEach(tool => {
