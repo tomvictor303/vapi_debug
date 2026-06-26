@@ -51,7 +51,7 @@ async function collectTargetTools() {
     }
 
     const confirmed = await confirmAction(
-      `Are you sure you want to remove ${params_to_remove.join(', ')} parameters from Vapi tools starting with "${filter_prefix}"?`
+      `Are you sure to remove ${params_to_remove.join(', ')} parameters from Vapi tools starting with "${filter_prefix}"?`
     );
     if (!confirmed) {
       console.log('Cancelled. No Vapi tools were fetched or changed.');
