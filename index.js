@@ -3,7 +3,11 @@ require('dotenv').config();
 const assistantId = process.env.ASSISTANT_ID;
 const apiKey = process.env.VAPI_API_KEY;
 
-async function fetchAssistant() {
+/**
+ * Fetches the configured Vapi assistant, prints its full response, then
+ * compares the assistant's configured tool IDs against the account's tools.
+ */
+async function fetchAssistantInfo() {
   try {
     if (!assistantId) {
       throw new Error('ASSISTANT_ID environment variable is required');
@@ -111,5 +115,5 @@ async function fetchAssistant() {
   }
 }
 
-fetchAssistant();
+fetchAssistantInfo();
 
