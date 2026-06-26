@@ -42,11 +42,11 @@ async function confirmAction(message) {
  * Removes configured params from a tool body schema.
  *
  * @param {object} body Tool body schema.
- * @returns {{ body: object, removedParams: string[] }} Updated body and removed params.
+ * @returns {{ body: object, removedParams2Log: string[] }} Updated body and removed params to log.
  */
 function removeParamsFromBody(body) {
   const updatedBody = structuredClone(body || {});
-  const removedParams = [];
+  const removedParams2Log = [];
 
   if (Array.isArray(updatedBody.required)) {
     const requiredParams = new Set(updatedBody.required);
@@ -54,7 +54,7 @@ function removeParamsFromBody(body) {
 
     params_to_remove.forEach(param => {
       if (requiredParams.has(param)) {
-        removedParams.push(param);
+        removedParams2Log.push(param);
       }
     });
   }
@@ -64,14 +64,14 @@ function removeParamsFromBody(body) {
       if (Object.hasOwn(updatedBody.properties, param)) {
         delete updatedBody.properties[param];
 
-        if (!removedParams.includes(param)) {
-          removedParams.push(param);
+        if (!removedParams2Log.includes(param)) {
+          removedParams2Log.push(param);
         }
       }
     });
   }
 
-  return { body: updatedBody, removedParams };
+  return { body: updatedBody, removedParams2Log };
 }
 
 /**
@@ -160,15 +160,15 @@ async function collectTargetTools() {
     }
 
     for (const tool of targetTools) {
-      const { body, removedParams } = removeParamsFromBody(tool.body);
+      const { body, removedParams2Log } = removeParamsFromBody(tool.body);
 
-      if (removedParams.length === 0) {
+      if (removedParams2Log.length === 0) {
         console.log(`Skipped ${tool.name}: no matching params found.`);
         continue;
       }
 
       await patchTool(tool, body);
-      console.log(`Patched ${tool.name}: removed ${removedParams.join(', ')}.`);
+      console.log(`Patched ${tool.name}: removed ${removedParams2Log.join(', ')}.`);
     }
 
     return targetTools;
