@@ -3,8 +3,8 @@ const readline = require('node:readline/promises');
 const { stdin: input, stdout: output } = require('node:process');
 
 const apiKey = process.env.VAPI_API_KEY;
-const filter_prefix = 'stayntouch_';
-const params_to_remove = ['hotel_id', 'isProduction'];
+const filter_prefix = 'quore_';
+const params_to_remove = ['oauth_token', 'action'];
 
 /**
  * Validates destructive-action guardrails before any Vapi tools are fetched or
