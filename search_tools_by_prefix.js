@@ -57,7 +57,7 @@ async function searchToolsByPrefix() {
 
     console.log(`\nTools found for "${prefix}": ${targetTools.length}`);
     targetTools.forEach(tool => {
-      console.log(`- ${tool.name} (${tool.id})`);
+      console.log(`- ${tool.name} (${tool.id}): ${tool.url || '(no current URL)'}`);
     });
 
     return targetTools;
