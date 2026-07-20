@@ -7,6 +7,7 @@ const API_URL = 'https://api.vapi.ai/call';
 const CALL_LIMIT = 500;
 const HOUR_MS = 60 * 60 * 1000;
 const CHUNK_LEVELS_MS = [12 * HOUR_MS, 6 * HOUR_MS, 2 * HOUR_MS];
+let inspectedCallSequence = 0;
 
 async function promptForToolNamePrefix() {
   const rl = readline.createInterface({ input, output });
@@ -63,6 +64,7 @@ async function fetchAdaptiveCallChunk({
   chunkEnd,
   apiKey,
   level = 0,
+  onCalls,
 }) {
   const calls = await fetchCallChunk({
     assistantId,
@@ -71,14 +73,18 @@ async function fetchAdaptiveCallChunk({
     apiKey,
   });
 
-  if (calls.length < CALL_LIMIT) return calls;
+  if (calls.length < CALL_LIMIT) {
+    await onCalls(calls);
+    return;
+  }
 
   if (level === CHUNK_LEVELS_MS.length - 1) {
     console.warn(
       `Warning: 2-hour block ${new Date(chunkStart).toISOString()} through ` +
       `${new Date(chunkEnd).toISOString()} reached the ${CALL_LIMIT}-call limit and may be incomplete.`
     );
-    return calls;
+    await onCalls(calls);
+    return;
   }
 
   const nextLevel = level + 1;
@@ -88,33 +94,47 @@ async function fetchAdaptiveCallChunk({
     `Chunk reached the ${CALL_LIMIT}-call limit; retrying it in ${nextDurationHours}-hour blocks...`
   );
 
-  const detailedCalls = [];
   for (
     let detailedStart = chunkStart;
     detailedStart <= chunkEnd;
     detailedStart += nextDuration
   ) {
     const detailedEnd = Math.min(detailedStart + nextDuration - 1, chunkEnd);
-    const blockCalls = await fetchAdaptiveCallChunk({
+    await fetchAdaptiveCallChunk({
       assistantId,
       chunkStart: detailedStart,
       chunkEnd: detailedEnd,
       apiKey,
       level: nextLevel,
+      onCalls,
     });
-    detailedCalls.push(...blockCalls);
   }
-
-  return detailedCalls;
 }
 
-async function fetchCalls({ assistantId, createdAtGe, createdAtLe }) {
+async function scanCallChunks({ assistantId, createdAtGe, createdAtLe, toolNamePrefix }) {
   const apiKey = process.env.VAPI_API_KEY?.trim();
   if (!apiKey) throw new Error('VAPI_API_KEY environment variable is required');
 
   const rangeStart = new Date(`${createdAtGe}T00:00:00.000Z`).getTime();
   const rangeEnd = new Date(`${createdAtLe}T23:59:59.999Z`).getTime();
-  const callsById = new Map();
+  const matchedCalls = [];
+  const sequenceAtStart = inspectedCallSequence;
+
+  const inspectChunk = calls => {
+    for (const call of calls) {
+      inspectedCallSequence += 1;
+      console.log(`Inspecting call ${inspectedCallSequence}`);
+
+      const matches = findMatchingToolCalls(call, toolNamePrefix);
+      if (matches.length > 0) {
+        matchedCalls.push({
+          callId: call.id,
+          startTime: formatLocalCallTime(call),
+          matches,
+        });
+      }
+    }
+  };
 
   for (
     let chunkStart = rangeStart;
@@ -122,21 +142,19 @@ async function fetchCalls({ assistantId, createdAtGe, createdAtLe }) {
     chunkStart += CHUNK_LEVELS_MS[0]
   ) {
     const chunkEnd = Math.min(chunkStart + CHUNK_LEVELS_MS[0] - 1, rangeEnd);
-    const calls = await fetchAdaptiveCallChunk({
+    await fetchAdaptiveCallChunk({
       assistantId,
       chunkStart,
       chunkEnd,
       apiKey,
-    });
-
-    calls.forEach(call => {
-      if (typeof call?.id === 'string' && call.id.length > 0) {
-        callsById.set(call.id, call);
-      }
+      onCalls: inspectChunk,
     });
   }
 
-  return [...callsById.values()];
+  return {
+    inspectedCallCount: inspectedCallSequence - sequenceAtStart,
+    matchedCalls,
+  };
 }
 
 function findMatchingToolCalls(call, toolNamePrefix) {
@@ -149,7 +167,7 @@ function findMatchingToolCalls(call, toolNamePrefix) {
     message.toolCalls.forEach((toolCall, toolCallIndex) => {
       const toolName = toolCall?.function?.name;
       if (typeof toolName === 'string' && toolName.startsWith(toolNamePrefix)) {
-        matches.push({ messageIndex, toolCallIndex, toolName, toolCall });
+        matches.push({ messageIndex, toolCallIndex, toolName });
       }
     });
   });
@@ -175,22 +193,6 @@ function formatLocalCallTime(call) {
   });
 }
 
-function inspectCallsForToolPrefix(calls, toolNamePrefix) {
-  const matchedCalls = [];
-
-  for (const [index, call] of calls.entries()) {
-    const callId = call.id;
-    const startTime = formatLocalCallTime(call);
-    console.log(`Inspecting call ${index + 1}/${calls.length}: ${callId}`);
-    console.log(`  Start time (local): ${startTime}`);
-
-    const matches = findMatchingToolCalls(call, toolNamePrefix);
-    if (matches.length > 0) matchedCalls.push({ callId, startTime, matches });
-  }
-
-  return matchedCalls;
-}
-
 async function main() {
   const assistantId = process.env.CALL_OF_ASSISTANT_ID?.trim();
   if (!assistantId) {
@@ -204,24 +206,22 @@ async function main() {
   }
 
   const toolNamePrefix = await promptForToolNamePrefix();
-  const calls = await fetchCalls({ assistantId, createdAtGe, createdAtLe });
-  const callIds = calls.map(call => call.id);
-
-  console.log(`\nFound ${callIds.length} call ID(s) for assistant ${assistantId}.`);
-  console.log(`Tool-name prefix for the next step: ${toolNamePrefix}`);
-  console.log('\nCall IDs:');
-  callIds.forEach(id => console.log(id));
-
-  const matchedCalls = inspectCallsForToolPrefix(calls, toolNamePrefix);
+  const { inspectedCallCount, matchedCalls } = await scanCallChunks({
+    assistantId,
+    createdAtGe,
+    createdAtLe,
+    toolNamePrefix,
+  });
   const matchCount = matchedCalls.reduce((total, call) => total + call.matches.length, 0);
 
-  console.log(`\nFound ${matchCount} matching tool call(s) in ${matchedCalls.length} call(s).`);
+  console.log(`\nInspected ${inspectedCallCount} call(s).`);
+  console.log(`Found ${matchCount} matching tool call(s) in ${matchedCalls.length} call(s).`);
   matchedCalls.forEach(({ callId, startTime, matches }) => {
     console.log(`\nCall ${callId} - ${startTime}:`);
     matches.forEach(match => console.log(`- ${match.toolName}`));
   });
 
-  return { callIds, toolNamePrefix, matchedCalls };
+  return { inspectedCallCount, toolNamePrefix, matchedCalls };
 }
 
 if (require.main === module) {
@@ -234,9 +234,8 @@ if (require.main === module) {
 module.exports = {
   fetchAdaptiveCallChunk,
   fetchCallChunk,
-  fetchCalls,
   findMatchingToolCalls,
   formatLocalCallTime,
-  inspectCallsForToolPrefix,
   requireDate,
+  scanCallChunks,
 };
