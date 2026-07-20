@@ -38,7 +38,7 @@ async function fetchCallChunk({ assistantId, createdAtGe, createdAtLe, apiKey })
     limit: String(CALL_LIMIT),
   }).toString();
 
-  console.log(`Fetching calls from ${createdAtGe} through ${createdAtLe}...`);
+  console.log(`Fetching & Analyzing calls from ${createdAtGe} through ${createdAtLe}...`);
   const response = await fetch(url, {
     headers: { Accept: 'application/json', Authorization: `Bearer ${apiKey}` },
   });
@@ -123,7 +123,6 @@ async function scanCallChunks({ assistantId, createdAtGe, createdAtLe, toolNameP
   const inspectChunk = calls => {
     for (const call of calls) {
       inspectedCallSequence += 1;
-      console.log(`Inspecting call ${inspectedCallSequence}`);
 
       const matches = findMatchingToolCalls(call, toolNamePrefix);
       if (matches.length > 0) {
