@@ -5,8 +5,8 @@ const { stdin: input, stdout: output } = require('node:process');
 
 const API_URL = 'https://api.vapi.ai/call';
 const CALL_LIMIT = 500;
-const DEFAULT_CHUNK_DURATION_MS = 8 * 60 * 60 * 1000;
-const DETAILED_CHUNK_DURATION_MS = 2 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+const CHUNK_LEVELS_MS = [12 * HOUR_MS, 6 * HOUR_MS, 2 * HOUR_MS];
 
 async function promptForToolNamePrefix() {
   const rl = readline.createInterface({ input, output });
@@ -57,7 +57,13 @@ async function fetchCallChunk({ assistantId, createdAtGe, createdAtLe, apiKey })
   return calls;
 }
 
-async function fetchAdaptiveCallChunk({ assistantId, chunkStart, chunkEnd, apiKey }) {
+async function fetchAdaptiveCallChunk({
+  assistantId,
+  chunkStart,
+  chunkEnd,
+  apiKey,
+  level = 0,
+}) {
   const calls = await fetchCallChunk({
     assistantId,
     createdAtGe: new Date(chunkStart).toISOString(),
@@ -67,33 +73,35 @@ async function fetchAdaptiveCallChunk({ assistantId, chunkStart, chunkEnd, apiKe
 
   if (calls.length < CALL_LIMIT) return calls;
 
+  if (level === CHUNK_LEVELS_MS.length - 1) {
+    console.warn(
+      `Warning: 2-hour block ${new Date(chunkStart).toISOString()} through ` +
+      `${new Date(chunkEnd).toISOString()} reached the ${CALL_LIMIT}-call limit and may be incomplete.`
+    );
+    return calls;
+  }
+
+  const nextLevel = level + 1;
+  const nextDuration = CHUNK_LEVELS_MS[nextLevel];
+  const nextDurationHours = nextDuration / HOUR_MS;
   console.log(
-    `Chunk reached the ${CALL_LIMIT}-call limit; retrying it in 2-hour blocks...`
+    `Chunk reached the ${CALL_LIMIT}-call limit; retrying it in ${nextDurationHours}-hour blocks...`
   );
 
   const detailedCalls = [];
   for (
     let detailedStart = chunkStart;
     detailedStart <= chunkEnd;
-    detailedStart += DETAILED_CHUNK_DURATION_MS
+    detailedStart += nextDuration
   ) {
-    const detailedEnd = Math.min(
-      detailedStart + DETAILED_CHUNK_DURATION_MS - 1,
-      chunkEnd
-    );
-    const blockCalls = await fetchCallChunk({
+    const detailedEnd = Math.min(detailedStart + nextDuration - 1, chunkEnd);
+    const blockCalls = await fetchAdaptiveCallChunk({
       assistantId,
-      createdAtGe: new Date(detailedStart).toISOString(),
-      createdAtLe: new Date(detailedEnd).toISOString(),
+      chunkStart: detailedStart,
+      chunkEnd: detailedEnd,
       apiKey,
+      level: nextLevel,
     });
-
-    if (blockCalls.length === CALL_LIMIT) {
-      console.warn(
-        `Warning: 2-hour block ${new Date(detailedStart).toISOString()} through ` +
-        `${new Date(detailedEnd).toISOString()} reached the ${CALL_LIMIT}-call limit and may be incomplete.`
-      );
-    }
     detailedCalls.push(...blockCalls);
   }
 
@@ -111,9 +119,9 @@ async function fetchCallIds({ assistantId, createdAtGe, createdAtLe }) {
   for (
     let chunkStart = rangeStart;
     chunkStart <= rangeEnd;
-    chunkStart += DEFAULT_CHUNK_DURATION_MS
+    chunkStart += CHUNK_LEVELS_MS[0]
   ) {
-    const chunkEnd = Math.min(chunkStart + DEFAULT_CHUNK_DURATION_MS - 1, rangeEnd);
+    const chunkEnd = Math.min(chunkStart + CHUNK_LEVELS_MS[0] - 1, rangeEnd);
     const calls = await fetchAdaptiveCallChunk({
       assistantId,
       chunkStart,
