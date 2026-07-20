@@ -122,6 +122,24 @@ function findMatchingToolCalls(call, toolNamePrefix) {
   return matches;
 }
 
+function formatLocalCallTime(call) {
+  const timestamp = call?.startedAt || call?.createdAt;
+  if (!timestamp) return '(start time unavailable)';
+
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return `(invalid start time: ${timestamp})`;
+
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'short',
+  });
+}
+
 async function inspectCallsForToolPrefix(callIds, toolNamePrefix) {
   const matchedCalls = [];
 
@@ -130,8 +148,10 @@ async function inspectCallsForToolPrefix(callIds, toolNamePrefix) {
 
     try {
       const call = await fetchCall(callId);
+      const startTime = formatLocalCallTime(call);
+      console.log(`  Start time (local): ${startTime}`);
       const matches = findMatchingToolCalls(call, toolNamePrefix);
-      if (matches.length > 0) matchedCalls.push({ callId, matches });
+      if (matches.length > 0) matchedCalls.push({ callId, startTime, matches });
     } catch (error) {
       console.error(`Unable to inspect call ${callId}: ${error.message}`);
     }
@@ -164,8 +184,8 @@ async function main() {
   const matchCount = matchedCalls.reduce((total, call) => total + call.matches.length, 0);
 
   console.log(`\nFound ${matchCount} matching tool call(s) in ${matchedCalls.length} call(s).`);
-  matchedCalls.forEach(({ callId, matches }) => {
-    console.log(`\nCall ${callId}:`);
+  matchedCalls.forEach(({ callId, startTime, matches }) => {
+    console.log(`\nCall ${callId} — ${startTime}:`);
     matches.forEach(match => console.log(`- ${match.toolName}`));
   });
 
@@ -184,6 +204,7 @@ module.exports = {
   fetchCallChunk,
   fetchCallIds,
   findMatchingToolCalls,
+  formatLocalCallTime,
   inspectCallsForToolPrefix,
   requireDate,
 };
