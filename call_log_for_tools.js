@@ -5,7 +5,8 @@ const { stdin: input, stdout: output } = require('node:process');
 
 const API_URL = 'https://api.vapi.ai/call';
 const CALL_LIMIT = 500;
-const CHUNK_DURATION_MS = 4 * 60 * 60 * 1000;
+const DEFAULT_CHUNK_DURATION_MS = 8 * 60 * 60 * 1000;
+const DETAILED_CHUNK_DURATION_MS = 2 * 60 * 60 * 1000;
 
 async function promptForToolNamePrefix() {
   const rl = readline.createInterface({ input, output });
@@ -53,11 +54,50 @@ async function fetchCallChunk({ assistantId, createdAtGe, createdAtLe, apiKey })
   if (!Array.isArray(calls)) {
     throw new Error('Unexpected Vapi response: expected an array of calls');
   }
-  if (calls.length === CALL_LIMIT) {
-    console.warn(`Warning: chunk reached the ${CALL_LIMIT}-call limit and may be incomplete.`);
+  return calls;
+}
+
+async function fetchAdaptiveCallChunk({ assistantId, chunkStart, chunkEnd, apiKey }) {
+  const calls = await fetchCallChunk({
+    assistantId,
+    createdAtGe: new Date(chunkStart).toISOString(),
+    createdAtLe: new Date(chunkEnd).toISOString(),
+    apiKey,
+  });
+
+  if (calls.length < CALL_LIMIT) return calls;
+
+  console.log(
+    `Chunk reached the ${CALL_LIMIT}-call limit; retrying it in 2-hour blocks...`
+  );
+
+  const detailedCalls = [];
+  for (
+    let detailedStart = chunkStart;
+    detailedStart <= chunkEnd;
+    detailedStart += DETAILED_CHUNK_DURATION_MS
+  ) {
+    const detailedEnd = Math.min(
+      detailedStart + DETAILED_CHUNK_DURATION_MS - 1,
+      chunkEnd
+    );
+    const blockCalls = await fetchCallChunk({
+      assistantId,
+      createdAtGe: new Date(detailedStart).toISOString(),
+      createdAtLe: new Date(detailedEnd).toISOString(),
+      apiKey,
+    });
+
+    if (blockCalls.length === CALL_LIMIT) {
+      console.warn(
+        `Warning: 2-hour block ${new Date(detailedStart).toISOString()} through ` +
+        `${new Date(detailedEnd).toISOString()} reached the ${CALL_LIMIT}-call limit and may be incomplete.`
+      );
+    }
+    detailedCalls.push(...blockCalls);
   }
 
-  return calls;
+  return detailedCalls;
 }
 
 async function fetchCallIds({ assistantId, createdAtGe, createdAtLe }) {
@@ -68,12 +108,16 @@ async function fetchCallIds({ assistantId, createdAtGe, createdAtLe }) {
   const rangeEnd = new Date(`${createdAtLe}T23:59:59.999Z`).getTime();
   const callIds = new Set();
 
-  for (let chunkStart = rangeStart; chunkStart <= rangeEnd; chunkStart += CHUNK_DURATION_MS) {
-    const chunkEnd = Math.min(chunkStart + CHUNK_DURATION_MS - 1, rangeEnd);
-    const calls = await fetchCallChunk({
+  for (
+    let chunkStart = rangeStart;
+    chunkStart <= rangeEnd;
+    chunkStart += DEFAULT_CHUNK_DURATION_MS
+  ) {
+    const chunkEnd = Math.min(chunkStart + DEFAULT_CHUNK_DURATION_MS - 1, rangeEnd);
+    const calls = await fetchAdaptiveCallChunk({
       assistantId,
-      createdAtGe: new Date(chunkStart).toISOString(),
-      createdAtLe: new Date(chunkEnd).toISOString(),
+      chunkStart,
+      chunkEnd,
       apiKey,
     });
 
@@ -201,6 +245,7 @@ if (require.main === module) {
 
 module.exports = {
   fetchCall,
+  fetchAdaptiveCallChunk,
   fetchCallChunk,
   fetchCallIds,
   findMatchingToolCalls,
