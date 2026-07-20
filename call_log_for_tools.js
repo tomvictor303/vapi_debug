@@ -108,13 +108,13 @@ async function fetchAdaptiveCallChunk({
   return detailedCalls;
 }
 
-async function fetchCallIds({ assistantId, createdAtGe, createdAtLe }) {
+async function fetchCalls({ assistantId, createdAtGe, createdAtLe }) {
   const apiKey = process.env.VAPI_API_KEY?.trim();
   if (!apiKey) throw new Error('VAPI_API_KEY environment variable is required');
 
   const rangeStart = new Date(`${createdAtGe}T00:00:00.000Z`).getTime();
   const rangeEnd = new Date(`${createdAtLe}T23:59:59.999Z`).getTime();
-  const callIds = new Set();
+  const callsById = new Map();
 
   for (
     let chunkStart = rangeStart;
@@ -130,30 +130,13 @@ async function fetchCallIds({ assistantId, createdAtGe, createdAtLe }) {
     });
 
     calls.forEach(call => {
-      if (typeof call?.id === 'string' && call.id.length > 0) callIds.add(call.id);
+      if (typeof call?.id === 'string' && call.id.length > 0) {
+        callsById.set(call.id, call);
+      }
     });
   }
 
-  return [...callIds];
-}
-
-async function fetchCall(callId) {
-  const apiKey = process.env.VAPI_API_KEY?.trim();
-  if (!apiKey) throw new Error('VAPI_API_KEY environment variable is required');
-
-  const response = await fetch(`${API_URL}/${encodeURIComponent(callId)}`, {
-    headers: { Accept: 'application/json', Authorization: `Bearer ${apiKey}` },
-  });
-
-  if (!response.ok) {
-    const responseText = await response.text();
-    throw new Error(
-      `Vapi call ${callId} request failed (${response.status} ${response.statusText})` +
-      (responseText ? `: ${responseText}` : '')
-    );
-  }
-
-  return response.json();
+  return [...callsById.values()];
 }
 
 function findMatchingToolCalls(call, toolNamePrefix) {
@@ -192,21 +175,17 @@ function formatLocalCallTime(call) {
   });
 }
 
-async function inspectCallsForToolPrefix(callIds, toolNamePrefix) {
+function inspectCallsForToolPrefix(calls, toolNamePrefix) {
   const matchedCalls = [];
 
-  for (const [index, callId] of callIds.entries()) {
-    console.log(`Inspecting call ${index + 1}/${callIds.length}: ${callId}`);
+  for (const [index, call] of calls.entries()) {
+    const callId = call.id;
+    const startTime = formatLocalCallTime(call);
+    console.log(`Inspecting call ${index + 1}/${calls.length}: ${callId}`);
+    console.log(`  Start time (local): ${startTime}`);
 
-    try {
-      const call = await fetchCall(callId);
-      const startTime = formatLocalCallTime(call);
-      console.log(`  Start time (local): ${startTime}`);
-      const matches = findMatchingToolCalls(call, toolNamePrefix);
-      if (matches.length > 0) matchedCalls.push({ callId, startTime, matches });
-    } catch (error) {
-      console.error(`Unable to inspect call ${callId}: ${error.message}`);
-    }
+    const matches = findMatchingToolCalls(call, toolNamePrefix);
+    if (matches.length > 0) matchedCalls.push({ callId, startTime, matches });
   }
 
   return matchedCalls;
@@ -225,19 +204,20 @@ async function main() {
   }
 
   const toolNamePrefix = await promptForToolNamePrefix();
-  const callIds = await fetchCallIds({ assistantId, createdAtGe, createdAtLe });
+  const calls = await fetchCalls({ assistantId, createdAtGe, createdAtLe });
+  const callIds = calls.map(call => call.id);
 
   console.log(`\nFound ${callIds.length} call ID(s) for assistant ${assistantId}.`);
   console.log(`Tool-name prefix for the next step: ${toolNamePrefix}`);
   console.log('\nCall IDs:');
   callIds.forEach(id => console.log(id));
 
-  const matchedCalls = await inspectCallsForToolPrefix(callIds, toolNamePrefix);
+  const matchedCalls = inspectCallsForToolPrefix(calls, toolNamePrefix);
   const matchCount = matchedCalls.reduce((total, call) => total + call.matches.length, 0);
 
   console.log(`\nFound ${matchCount} matching tool call(s) in ${matchedCalls.length} call(s).`);
   matchedCalls.forEach(({ callId, startTime, matches }) => {
-    console.log(`\nCall ${callId} — ${startTime}:`);
+    console.log(`\nCall ${callId} - ${startTime}:`);
     matches.forEach(match => console.log(`- ${match.toolName}`));
   });
 
@@ -252,10 +232,9 @@ if (require.main === module) {
 }
 
 module.exports = {
-  fetchCall,
   fetchAdaptiveCallChunk,
   fetchCallChunk,
-  fetchCallIds,
+  fetchCalls,
   findMatchingToolCalls,
   formatLocalCallTime,
   inspectCallsForToolPrefix,
