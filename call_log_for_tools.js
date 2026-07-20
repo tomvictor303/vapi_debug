@@ -4,8 +4,8 @@ const readline = require('node:readline/promises');
 const { stdin: input, stdout: output } = require('node:process');
 
 const API_URL = 'https://api.vapi.ai/call';
-const CALL_LIMIT = 1000;
-const CHUNK_DURATION_MS = 8 * 60 * 60 * 1000;
+const CALL_LIMIT = 500;
+const CHUNK_DURATION_MS = 4 * 60 * 60 * 1000;
 
 async function promptForToolNamePrefix() {
   const rl = readline.createInterface({ input, output });
@@ -85,6 +85,61 @@ async function fetchCallIds({ assistantId, createdAtGe, createdAtLe }) {
   return [...callIds];
 }
 
+async function fetchCall(callId) {
+  const apiKey = process.env.VAPI_API_KEY?.trim();
+  if (!apiKey) throw new Error('VAPI_API_KEY environment variable is required');
+
+  const response = await fetch(`${API_URL}/${encodeURIComponent(callId)}`, {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${apiKey}` },
+  });
+
+  if (!response.ok) {
+    const responseText = await response.text();
+    throw new Error(
+      `Vapi call ${callId} request failed (${response.status} ${response.statusText})` +
+      (responseText ? `: ${responseText}` : '')
+    );
+  }
+
+  return response.json();
+}
+
+function findMatchingToolCalls(call, toolNamePrefix) {
+  if (!Array.isArray(call?.messages)) return [];
+
+  const matches = [];
+  call.messages.forEach((message, messageIndex) => {
+    if (message?.role !== 'tool_calls' || !Array.isArray(message.toolCalls)) return;
+
+    message.toolCalls.forEach((toolCall, toolCallIndex) => {
+      const toolName = toolCall?.function?.name;
+      if (typeof toolName === 'string' && toolName.startsWith(toolNamePrefix)) {
+        matches.push({ messageIndex, toolCallIndex, toolName, toolCall });
+      }
+    });
+  });
+
+  return matches;
+}
+
+async function inspectCallsForToolPrefix(callIds, toolNamePrefix) {
+  const matchedCalls = [];
+
+  for (const [index, callId] of callIds.entries()) {
+    console.log(`Inspecting call ${index + 1}/${callIds.length}: ${callId}`);
+
+    try {
+      const call = await fetchCall(callId);
+      const matches = findMatchingToolCalls(call, toolNamePrefix);
+      if (matches.length > 0) matchedCalls.push({ callId, matches });
+    } catch (error) {
+      console.error(`Unable to inspect call ${callId}: ${error.message}`);
+    }
+  }
+
+  return matchedCalls;
+}
+
 async function main() {
   const assistantId = process.env.CALL_OF_ASSISTANT_ID?.trim();
   if (!assistantId) {
@@ -104,7 +159,17 @@ async function main() {
   console.log(`Tool-name prefix for the next step: ${toolNamePrefix}`);
   console.log('\nCall IDs:');
   callIds.forEach(id => console.log(id));
-  return { callIds, toolNamePrefix };
+
+  const matchedCalls = await inspectCallsForToolPrefix(callIds, toolNamePrefix);
+  const matchCount = matchedCalls.reduce((total, call) => total + call.matches.length, 0);
+
+  console.log(`\nFound ${matchCount} matching tool call(s) in ${matchedCalls.length} call(s).`);
+  matchedCalls.forEach(({ callId, matches }) => {
+    console.log(`\nCall ${callId}:`);
+    matches.forEach(match => console.log(`- ${match.toolName}`));
+  });
+
+  return { callIds, toolNamePrefix, matchedCalls };
 }
 
 if (require.main === module) {
@@ -114,4 +179,11 @@ if (require.main === module) {
   });
 }
 
-module.exports = { fetchCallIds, fetchCallChunk, requireDate };
+module.exports = {
+  fetchCall,
+  fetchCallChunk,
+  fetchCallIds,
+  findMatchingToolCalls,
+  inspectCallsForToolPrefix,
+  requireDate,
+};
