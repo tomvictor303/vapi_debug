@@ -1,6 +1,7 @@
 require('dotenv').config();
 
 const apiKey = process.env.VAPI_API_KEY;
+const prefixes_to_exclude = ["telnyx_", "vaia_mail_", "webhook_"];
 
 async function fetchTools() {
   const toolsUrl = 'https://api.vapi.ai/tool?limit=1000';
@@ -39,7 +40,7 @@ async function checkAsyncApiRequestTools() {
       .sort((firstTool, secondTool) =>
         (firstTool.name || '').localeCompare(secondTool.name || '')
       );
-    const targetTools = allTools
+    const unsetOrTrueApiRequestTools = allTools
       .filter(
         tool =>
           tool.type === 'apiRequest' &&
@@ -48,6 +49,13 @@ async function checkAsyncApiRequestTools() {
       .sort((firstTool, secondTool) =>
         (firstTool.name || '').localeCompare(secondTool.name || '')
       );
+    const excludedTargetTools = unsetOrTrueApiRequestTools.filter(tool =>
+      prefixes_to_exclude.some(prefix => (tool.name || '').startsWith(prefix))
+    );
+    const targetTools = unsetOrTrueApiRequestTools.filter(
+      tool =>
+        !prefixes_to_exclude.some(prefix => (tool.name || '').startsWith(prefix))
+    );
 
     console.log(`\nTotal tools: ${allTools.length}`);
     console.log(
@@ -63,7 +71,14 @@ async function checkAsyncApiRequestTools() {
       console.log(`- ${tool.name || '(unnamed tool)'}`);
     });
 
-    return targetTools;
+    console.log(
+      `\nExcluded target tools (${prefixes_to_exclude.join(', ')}): ${excludedTargetTools.length}`
+    );
+    excludedTargetTools.forEach(tool => {
+      console.log(`- ${tool.name || '(unnamed tool)'}`);
+    });
+
+    return { targetTools, excludedTargetTools };
   } catch (error) {
     console.error('Error:', error.message);
     return [];
