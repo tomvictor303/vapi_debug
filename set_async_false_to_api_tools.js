@@ -116,7 +116,7 @@ async function checkAsyncApiRequestTools() {
 
     console.log(`\nTotal tools: ${allTools.length}`);
     console.log(
-      `API request tools with async explicitly set to false: ${asyncFalseApiRequestTools.length}`
+      `API request tools **already** with async explicitly set to false: ${asyncFalseApiRequestTools.length}`
     );
     asyncFalseApiRequestTools.forEach(tool => {
       console.log(`- ${tool.name || '(unnamed tool)'}`);
