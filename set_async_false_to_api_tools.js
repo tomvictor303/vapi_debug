@@ -41,6 +41,25 @@ async function confirmAction(message) {
   }
 }
 
+async function promptForTargetPrefix() {
+  const rl = readline.createInterface({ input, output });
+
+  try {
+    const answer = await rl.question(
+      'Tool name prefix to patch (or type "all" to patch all eligible tools): '
+    );
+    const prefix = answer.trim();
+
+    if (!prefix) {
+      throw new Error('A tool name prefix or "all" is required');
+    }
+
+    return prefix;
+  } finally {
+    rl.close();
+  }
+}
+
 async function setToolAsyncFalse(tool) {
   if (!tool.id) {
     throw new Error('Tool ID is missing');
@@ -48,7 +67,7 @@ async function setToolAsyncFalse(tool) {
 
   const toolUrl = `https://api.vapi.ai/tool/${tool.id}`;
   const response = await fetch(toolUrl, {
-    method: 'PUT',
+    method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
@@ -69,6 +88,8 @@ async function checkAsyncApiRequestTools() {
       throw new Error('VAPI_API_KEY environment variable is required');
     }
 
+    const targetPrefix = await promptForTargetPrefix();
+    const patchAllEligibleTools = targetPrefix.toLowerCase() === 'all';
     const allTools = await fetchTools();
     const asyncFalseApiRequestTools = allTools
       .filter(tool => tool.type === 'apiRequest' && tool.async === false)
@@ -89,7 +110,8 @@ async function checkAsyncApiRequestTools() {
     );
     const targetTools = unsetOrTrueApiRequestTools.filter(
       tool =>
-        !prefixes_to_exclude.some(prefix => (tool.name || '').startsWith(prefix))
+        !prefixes_to_exclude.some(prefix => (tool.name || '').startsWith(prefix)) &&
+        (patchAllEligibleTools || (tool.name || '').startsWith(targetPrefix))
     );
 
     console.log(`\nTotal tools: ${allTools.length}`);
@@ -100,7 +122,7 @@ async function checkAsyncApiRequestTools() {
       console.log(`- ${tool.name || '(unnamed tool)'}`);
     });
     console.log(
-      `\nTarget API request tools with async unset or set to true: ${targetTools.length}`
+      `\nTarget API request tools for "${targetPrefix}" with async unset or set to true: ${targetTools.length}`
     );
     targetTools.forEach(tool => {
       console.log(`- ${tool.name || '(unnamed tool)'}`);
@@ -119,7 +141,7 @@ async function checkAsyncApiRequestTools() {
     }
 
     const confirmed = await confirmAction(
-      `\nSet async to false for ${targetTools.length} target tools using PUT?`
+      `\nSet async to false for ${targetTools.length} target tools using PATCH?`
     );
     if (!confirmed) {
       console.log('Cancelled. No tools were changed.');
