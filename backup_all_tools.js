@@ -3,7 +3,14 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 const apiKey = process.env.VAPI_API_KEY;
-const backupFilePath = path.join(__dirname, 'bku_all_api_request_tools.json');
+
+function createBackupFilePath() {
+  const timestamp = new Date().toISOString().replace(/[-:.]/g, '');
+  return path.join(
+    __dirname,
+    `bku_all_api_request_tools_${timestamp}.json`
+  );
+}
 
 async function fetchTools() {
   const toolsUrl = 'https://api.vapi.ai/tool?limit=1000';
@@ -38,6 +45,7 @@ async function backupAllApiRequestTools() {
 
     const allTools = await fetchTools();
     const apiRequestTools = allTools.filter(tool => tool.type === 'apiRequest');
+    const backupFilePath = createBackupFilePath();
 
     await fs.writeFile(
       backupFilePath,
