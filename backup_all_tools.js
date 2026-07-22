@@ -8,6 +8,7 @@ function createBackupFilePath() {
   const timestamp = new Date().toISOString().replace(/[-:.]/g, '');
   return path.join(
     __dirname,
+    'backup',
     `bku_all_api_request_tools_${timestamp}.json`
   );
 }
@@ -47,6 +48,7 @@ async function backupAllApiRequestTools() {
     const apiRequestTools = allTools.filter(tool => tool.type === 'apiRequest');
     const backupFilePath = createBackupFilePath();
 
+    await fs.mkdir(path.dirname(backupFilePath), { recursive: true });
     await fs.writeFile(
       backupFilePath,
       `${JSON.stringify(apiRequestTools, null, 2)}\n`,
