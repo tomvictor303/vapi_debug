@@ -1,4 +1,6 @@
 require('dotenv').config();
+const readline = require('node:readline/promises');
+const { stdin: input, stdout: output } = require('node:process');
 
 const apiKey = process.env.VAPI_API_KEY;
 const prefixes_to_exclude = ["telnyx_", "vaia_mail_", "webhook_"];
@@ -26,6 +28,39 @@ async function fetchTools() {
   }
 
   return tools;
+}
+
+async function confirmAction(message) {
+  const rl = readline.createInterface({ input, output });
+
+  try {
+    const answer = await rl.question(`${message} Type y/n: `);
+    return answer.trim().toLowerCase() === 'y';
+  } finally {
+    rl.close();
+  }
+}
+
+async function setToolAsyncFalse(tool) {
+  if (!tool.id) {
+    throw new Error('Tool ID is missing');
+  }
+
+  const toolUrl = `https://api.vapi.ai/tool/${tool.id}`;
+  const response = await fetch(toolUrl, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      async: false,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP status: ${response.status}`);
+  }
 }
 
 async function checkAsyncApiRequestTools() {
@@ -78,7 +113,39 @@ async function checkAsyncApiRequestTools() {
       console.log(`- ${tool.name || '(unnamed tool)'}`);
     });
 
-    return { targetTools, excludedTargetTools };
+    if (targetTools.length === 0) {
+      console.log('\nNo target tools need to be updated.');
+      return { targetTools, excludedTargetTools };
+    }
+
+    const confirmed = await confirmAction(
+      `\nSet async to false for ${targetTools.length} target tools using PUT?`
+    );
+    if (!confirmed) {
+      console.log('Cancelled. No tools were changed.');
+      return { targetTools, excludedTargetTools };
+    }
+
+    let updatedCount = 0;
+    const failedTools = [];
+
+    for (const tool of targetTools) {
+      try {
+        await setToolAsyncFalse(tool);
+        updatedCount += 1;
+        console.log(`Updated ${tool.name || '(unnamed tool)'} (${tool.id}): async = false`);
+      } catch (error) {
+        failedTools.push(tool);
+        console.error(
+          `Failed ${tool.name || '(unnamed tool)'} (${tool.id}): ${error.message}`
+        );
+      }
+    }
+
+    console.log(`\nUpdated tools: ${updatedCount}`);
+    console.log(`Failed tools: ${failedTools.length}`);
+
+    return { targetTools, excludedTargetTools, updatedCount, failedTools };
   } catch (error) {
     console.error('Error:', error.message);
     return [];
