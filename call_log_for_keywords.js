@@ -52,23 +52,87 @@ async function fetchCallChunk({ assistantId, createdAtGe, createdAtLe, apiKey })
   }).toString();
 
   console.log(`Fetching & Analyzing calls from ${createdAtGe} through ${createdAtLe}...`);
-  const response = await fetch(url, {
-    headers: { Accept: 'application/json', Authorization: `Bearer ${apiKey}` },
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: { Accept: 'application/json', Authorization: `Bearer ${apiKey}` },
+    });
+  } catch (error) {
+    throw new Error(
+      `Vapi request failed while fetching ${createdAtGe} through ${createdAtLe}`,
+      { cause: error }
+    );
+  }
 
   if (!response.ok) {
-    const responseText = await response.text();
+    let responseText = '';
+    try {
+      responseText = await response.text();
+    } catch (error) {
+      throw new Error(
+        `Vapi rejected ${createdAtGe} through ${createdAtLe} with HTTP ` +
+        `${response.status}, then reading the error response failed`,
+        { cause: error }
+      );
+    }
     throw new Error(
       `Vapi call request failed (${response.status} ${response.statusText})` +
       (responseText ? `: ${responseText}` : '')
     );
   }
 
-  const calls = await response.json();
+  let responseText;
+  try {
+    responseText = await response.text();
+  } catch (error) {
+    throw new Error(
+      `Vapi response body terminated while reading ${createdAtGe} through ${createdAtLe}`,
+      { cause: error }
+    );
+  }
+
+  let calls;
+  try {
+    calls = JSON.parse(responseText);
+  } catch (error) {
+    throw new Error(
+      `Vapi returned invalid JSON for ${createdAtGe} through ${createdAtLe} ` +
+      `(${responseText.length} response characters received)`,
+      { cause: error }
+    );
+  }
+
   if (!Array.isArray(calls)) {
     throw new Error('Unexpected Vapi response: expected an array of calls');
   }
   return calls;
+}
+
+function formatErrorChain(error) {
+  const lines = [];
+  const seen = new Set();
+  let current = error;
+  let depth = 0;
+
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    const label = depth === 0 ? 'Error' : `Caused by (${depth})`;
+    const details = [
+      current.name && current.name !== 'Error' ? current.name : '',
+      current.message || String(current),
+      current.code ? `[code: ${current.code}]` : '',
+    ].filter(Boolean).join(': ');
+    lines.push(`${label}: ${details}`);
+
+    if (current.stack) {
+      lines.push(current.stack);
+    }
+
+    current = current.cause;
+    depth += 1;
+  }
+
+  return lines.join('\n');
 }
 
 async function fetchAdaptiveCallChunk({
@@ -292,7 +356,7 @@ async function main() {
 
 if (require.main === module) {
   main().catch(error => {
-    console.error('Error:', error.message);
+    console.error(formatErrorChain(error));
     process.exitCode = 1;
   });
 }
@@ -302,6 +366,7 @@ module.exports = {
   fetchCallChunk,
   findMatchingToolCalls,
   findMatchingUserMessages,
+  formatErrorChain,
   formatLocalCallTime,
   requireDate,
   requireKeywords,
