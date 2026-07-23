@@ -272,19 +272,19 @@ async function main() {
     `${callsWithMatchingTools} of those call(s) called a "${toolNamePrefix}" tool.`
   );
 
+  console.log('\nMatched conversations:');
   matchedCalls.forEach(({ callId, startTime, userMessageMatches, matchingToolCalls }) => {
-    console.log(`\nCall ${callId} - ${startTime}:`);
-    userMessageMatches.forEach(match => {
-      console.log(`- User: ${match.message}`);
-      console.log(`  Matched keyword(s): ${match.matchedKeywords.join(', ')}`);
-    });
+    const toolResult = matchingToolCalls.length === 0
+      ? 'No'
+      : `Yes (${matchingToolCalls.map(match => match.toolName).join(', ')})`;
 
-    if (matchingToolCalls.length === 0) {
-      console.log(`- Called "${toolNamePrefix}" tool: No`);
-    } else {
-      console.log(`- Called "${toolNamePrefix}" tool: Yes`);
-      matchingToolCalls.forEach(match => console.log(`  - ${match.toolName}`));
-    }
+    userMessageMatches.forEach(match => {
+      const singleLineMessage = match.message.replace(/\s+/g, ' ').trim();
+      console.log(
+        `${callId} | ${startTime} | Keywords: ${match.matchedKeywords.join(', ')} | ` +
+        `User: ${singleLineMessage} | "${toolNamePrefix}" tool called: ${toolResult}`
+      );
+    });
   });
 
   return { inspectedCallCount, keywords, toolNamePrefix, matchedCalls };
