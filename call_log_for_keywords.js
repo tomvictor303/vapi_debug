@@ -4,7 +4,7 @@ const readline = require('node:readline/promises');
 const { stdin: input, stdout: output } = require('node:process');
 
 const API_URL = 'https://api.vapi.ai/call';
-const CALL_LIMIT = 500;
+const CALL_LIMIT = 300;
 const HOUR_MS = 60 * 60 * 1000;
 const CHUNK_LEVELS_MS = [12 * HOUR_MS, 6 * HOUR_MS, 2 * HOUR_MS];
 
