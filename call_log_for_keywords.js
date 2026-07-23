@@ -344,7 +344,8 @@ async function main() {
 
     userMessageMatches.forEach(match => {
       const singleLineMessage = match.message.replace(/\s+/g, ' ').trim();
-      console.log(`\n${callId} | ${startTime}`);
+      console.log('\n======================================');
+      console.log(`${callId} | ${startTime}`);
       console.log(`Keywords: ${match.matchedKeywords.join(', ')}`);
       console.log(`Message: ${singleLineMessage}`);
       console.log(`"${toolNamePrefix}" tool called: ${toolResult}`);
