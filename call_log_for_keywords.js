@@ -232,6 +232,21 @@ function findMatchingToolCalls(call, toolNamePrefix) {
   return matches;
 }
 
+function getBotUserConversation(call) {
+  if (!Array.isArray(call?.messages)) return [];
+
+  return call.messages
+    .filter(
+      message =>
+        (message?.role === 'bot' || message?.role === 'user') &&
+        typeof message.message === 'string'
+    )
+    .map(message => ({
+      role: message.role,
+      message: message.message,
+    }));
+}
+
 function formatLocalCallTime(call) {
   const timestamp = call?.startedAt || call?.createdAt;
   if (!timestamp) return '(start time unavailable)';
@@ -276,6 +291,7 @@ async function scanCallChunks({
         startTime: formatLocalCallTime(call),
         userMessageMatches,
         matchingToolCalls: findMatchingToolCalls(call, toolNamePrefix),
+        conversation: getBotUserConversation(call),
       });
     }
   };
@@ -337,7 +353,13 @@ async function main() {
   );
 
   console.log('\nMatched conversations:');
-  matchedCalls.forEach(({ callId, startTime, userMessageMatches, matchingToolCalls }) => {
+  matchedCalls.forEach(({
+    callId,
+    startTime,
+    userMessageMatches,
+    matchingToolCalls,
+    conversation,
+  }) => {
     const toolResult = matchingToolCalls.length === 0
       ? 'No'
       : `Yes (${matchingToolCalls.map(match => match.toolName).join(', ')})`;
@@ -349,6 +371,14 @@ async function main() {
       console.log(`Keywords: ${match.matchedKeywords.join(', ')}`);
       console.log(`Message: ${singleLineMessage}`);
       console.log(`"${toolNamePrefix}" tool called: ${toolResult}`);
+
+      if (matchingToolCalls.length === 0) {
+        console.log('\n[conversation]');
+        conversation.forEach(message => {
+          const singleLineConversationMessage = message.message.replace(/\s+/g, ' ').trim();
+          console.log(`${message.role}: ${JSON.stringify(singleLineConversationMessage)}`);
+        });
+      }
     });
   });
 
@@ -369,6 +399,7 @@ module.exports = {
   findMatchingUserMessages,
   formatErrorChain,
   formatLocalCallTime,
+  getBotUserConversation,
   requireDate,
   requireKeywords,
   scanCallChunks,
